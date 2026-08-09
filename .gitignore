@@ -26,7 +26,10 @@ docs/hand/
 docs/handbynadevaynoskix.blend
 docs/handbynadevaynoskix.fbx
 docs/handct_hand.obj
-docs/models_web/
+docs/models_web/*
+!docs/models_web/
+!docs/models_web/hand_landmarker.task
+!docs/models_web/label_map.json
 
 # OS junk
 .DS_Store
