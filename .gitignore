@@ -1,0 +1,40 @@
+# Virtual environment
+venv/
+env/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Data & models (large files - handle separately, not via plain git)
+data/raw/
+models/*.h5
+models/*.pt
+models/*.pth
+models/*.keras
+models/*.task
+
+# TensorFlow.js converted model (regeneratable from .keras via tensorflowjs_converter)
+webapp/tfjs_model/
+
+# Large 3D source assets (not needed by the working app; kept locally only)
+docs/hand/
+docs/handbynadevaynoskix.blend
+docs/handbynadevaynoskix.fbx
+docs/handct_hand.obj
+docs/models_web/
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+*.code-workspace
+
+# Environment secrets
+.env

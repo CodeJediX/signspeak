@@ -1,0 +1,9 @@
+{
+  "name": "SignSpeak Sign Viewer",
+  "short_name": "SignSpeak",
+  "start_url": "./sign_viewer.html",
+  "display": "standalone",
+  "background_color": "#121417",
+  "theme_color": "#5fd9c7",
+  "description": "Interactive articulated sign-language hand viewer"
+}
