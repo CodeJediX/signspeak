@@ -208,6 +208,30 @@
   body.highContrast { --bg:#000; --panel:#080808; --panel-alt:#111; --border:#fff; --text:#fff; --text-dim:#fff; --accent:#00ffff; --accent-dim:#00a0a0; }
 
   #learningPanel, #webcamPanel { padding: 12px 13px; font-size: 12px; }
+  #numberPosePanel { padding: 12px 13px; font-size: 12px; color: var(--text-dim); }
+  #numberPoseGrid {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 6px;
+    margin-top: 8px;
+  }
+  #numberPoseGrid button {
+    min-height: 34px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--panel-alt);
+    color: var(--text);
+    cursor: pointer;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    transition: border-color .12s ease, color .12s ease, background .12s ease;
+  }
+  #numberPoseGrid button:hover,
+  #numberPoseGrid button.active {
+    border-color: var(--accent-dim);
+    color: var(--accent);
+    background: var(--accent-soft);
+  }
   #learningPanel button, #webcamPanel button {
     padding: 6px 9px; border: 1px solid var(--border); border-radius: var(--radius-sm);
     background: var(--panel-alt); color: var(--text); cursor: pointer; transition: border-color .12s ease;
@@ -416,6 +440,27 @@
   <img src="SignSpeak.png" alt="SignSpeak" />
   <div id="preloaderBar"></div>
 </div>
+<script>
+  window.setTimeout(function () {
+    var preloader = document.getElementById("preloader");
+    if (preloader) preloader.classList.add("hidden");
+  }, 1800);
+  window.switchTab = function (name) {
+    var recognizeEl = document.getElementById("recognizeView");
+    var viewerEl = document.getElementById("viewerView");
+    var btnR = document.getElementById("tabBtnRecognize");
+    var btnV = document.getElementById("tabBtnViewer");
+    var heading = document.getElementById("tabHeading");
+    var toViewer = name === "viewer";
+    if (!recognizeEl || !viewerEl) return;
+    recognizeEl.style.display = toViewer ? "none" : "";
+    viewerEl.style.display = toViewer ? "" : "none";
+    if (btnR) btnR.classList.toggle("active", !toViewer);
+    if (btnV) btnV.classList.toggle("active", toViewer);
+    if (heading) heading.textContent = toViewer ? "Sign Viewer" : "Recognize";
+    if (toViewer && typeof window.onResize === "function") window.onResize();
+  };
+</script>
 <div id="topbar">
   <h1>SignSpeak <span class="divider">/</span> <span class="sub" id="tabHeading">Recognize</span></h1>
   <div style="display:flex; align-items:center; gap:14px;">
@@ -540,6 +585,18 @@
       </div>
     </div>
 
+    <div class="panel" id="numberPosePanel">
+      <div class="sectionLabel" style="padding:0; margin-bottom:2px;">Number hand</div>
+      <div id="numberPoseGrid" aria-label="Number pose shortcuts">
+        <button data-number-pose="0">0</button>
+        <button data-number-pose="1">1</button>
+        <button data-number-pose="2">2</button>
+        <button data-number-pose="3">3</button>
+        <button data-number-pose="4">4</button>
+        <button data-number-pose="5">5</button>
+      </div>
+    </div>
+
     <div class="panel" id="modelPanel">
       <div class="modelTitle">
         <span>3D model</span><span id="modelState">loading articulated hand…</span>
@@ -565,8 +622,18 @@
         <button id="glbBtn">Export GLB</button>
         <button id="diagnosticBtn">Diagnostics</button>
       </div>
+      <div class="rangeRow">
+        <label for="uploadedOpacityRange">Uploaded model opacity</label>
+        <span class="rangeValue" id="uploadedOpacityValue">28%</span>
+      </div>
+      <input id="uploadedOpacityRange" type="range" min="8" max="100" value="28" step="1" />
+      <div class="modelBtns">
+        <button id="loadUploadedModelBtn">Reload uploaded model</button>
+        <button id="toggleUploadedModelBtn">Hide uploaded model</button>
+      </div>
+      <label class="toggle" style="margin-top:8px;"><input id="compareModelToggle" type="checkbox" checked /> Compare beside animated hand</label>
       <div id="modelDiag" class="diag" hidden></div>
-      <div id="performanceBadge">Articulated FBX · independent joint driver</div>
+      <div id="performanceBadge">Articulated landmark hand · independent joint driver</div>
     </div>
 
     <div class="panel" id="optionsRow">
@@ -698,11 +765,16 @@ var LIGHT_PRESETS = {
 };
 
 
-// ---- FBX human-hand model / pose driver ----
+// ---- Optional external model loader / pose driver ----
 var MODEL_URL = "handbynadevaynoskix.fbx";
 var FALLBACK_MODEL_URL = "handct_hand.obj";
 var objLoader = null;
 var objSource = null;
+var uploadedModel = null;
+var uploadedModelUrl = "models/base.obj";
+var uploadedModelVisible = true;
+var uploadedModelCompare = true;
+var uploadedModelOpacity = 0.28;
 var fbxLoader = null;
 var fbxSource = null;
 var fbxReady = false;
@@ -1044,6 +1116,83 @@ function normalizeModel(root){
   var center=box.getCenter(new THREE.Vector3());
   root.position.sub(center.multiplyScalar(1));
   root.position.y += 0.1;
+}
+
+function normalizeUploadedModel(root) {
+  var box = new THREE.Box3().setFromObject(root);
+  var size = box.getSize(new THREE.Vector3());
+  var maxDim = Math.max(size.x, size.y, size.z) || 1;
+  root.scale.setScalar(1.45 / maxDim);
+  box.setFromObject(root);
+  var center = box.getCenter(new THREE.Vector3());
+  root.position.sub(center);
+  root.position.y += 0.06;
+  root.position.z -= 0.08;
+}
+
+function setUploadedModelMaterial(root) {
+  var mat = new THREE.MeshPhysicalMaterial({
+    color: 0xe0ac85,
+    roughness: 0.5,
+    metalness: 0.0,
+    clearcoat: 0.12,
+    clearcoatRoughness: 0.45,
+    transparent: uploadedModelOpacity < 1,
+    opacity: uploadedModelOpacity,
+    depthWrite: uploadedModelOpacity >= 0.96
+  });
+  root.traverse(function (node) {
+    if (!node.isMesh) return;
+    node.castShadow = true;
+    node.receiveShadow = true;
+    node.material = mat.clone();
+  });
+}
+
+function updateUploadedModelVisibility() {
+  if (!modelGroup) return;
+  modelGroup.visible = !!uploadedModel && uploadedModelVisible;
+  if (!uploadedModel) return;
+  uploadedModel.position.x = uploadedModelCompare ? 1.05 : 0;
+  uploadedModel.traverse(function (node) {
+    if (!node.isMesh || !node.material) return;
+    node.material.opacity = uploadedModelOpacity;
+    node.material.transparent = uploadedModelOpacity < 1;
+    node.material.depthWrite = uploadedModelOpacity >= 0.96;
+    node.material.needsUpdate = true;
+  });
+  var toggleBtn = document.getElementById("toggleUploadedModelBtn");
+  if (toggleBtn) toggleBtn.textContent = uploadedModelVisible ? "Hide uploaded model" : "Show uploaded model";
+}
+
+function loadUploadedBaseModel() {
+  if (!modelGroup) return;
+  if (!THREE.OBJLoader) {
+    setModelState("OBJ loader unavailable", "warn");
+    modelDiagnostics = "The animated landmark hand is ready, but the uploaded OBJ preview could not load because OBJLoader is unavailable.";
+    return;
+  }
+  if (uploadedModel) {
+    modelGroup.remove(uploadedModel);
+    safeDisposeObject(uploadedModel);
+    uploadedModel = null;
+  }
+  objLoader = objLoader || new THREE.OBJLoader();
+  setModelState("loading uploaded OBJ...", "");
+  objLoader.load(uploadedModelUrl, function (obj) {
+    uploadedModel = obj;
+    setUploadedModelMaterial(uploadedModel);
+    normalizeUploadedModel(uploadedModel);
+    modelGroup.add(uploadedModel);
+    uploadedModelVisible = true;
+    updateUploadedModelVisibility();
+    setModelState("landmark hand + uploaded OBJ ready", "ready");
+    modelDiagnostics = "Uploaded model loaded from " + uploadedModelUrl + "\nThis OBJ is used as a static/reference hand model. Because OBJ has no skeleton or finger bones, SignSpeak keeps the landmark hand as the accurate animation layer for signs.";
+  }, null, function (err) {
+    console.error("Uploaded model load failed", err);
+    setModelState("uploaded OBJ failed", "warn");
+    modelDiagnostics = "Could not load " + uploadedModelUrl + ". The animated landmark hand still works.";
+  });
 }
 
 function prepareOBJDeformation(root) {
@@ -1923,7 +2072,8 @@ function initThree() {
 
   window.addEventListener("resize", onResize);
   setModelState("Articulated landmark hand ready","ready");
-  modelDiagnostics="Runtime articulated hand active\nEach thumb and finger segment is generated from its own landmark joint.\nThe supplied FBX remains available in docs for reference.";
+  modelDiagnostics="Runtime articulated hand active\nEach thumb and finger segment is generated from its own landmark joint.\nThe imported number-hand OBJ was inspected separately; it is not a rigged bendable hand, so SignSpeak uses this procedural anatomical renderer.";
+  loadUploadedBaseModel();
   animate();
 }
 
@@ -2017,7 +2167,7 @@ function renderFrame(word) {
   if (leftPoints) handsPresent.push("L");
   if (rightPoints) handsPresent.push("R");
   hideModels();
-  modelGroup.visible=false;
+  updateUploadedModelVisibility();
   var handCount = (leftPoints ? 1 : 0) + (rightPoints ? 1 : 0);
   if (handCount === 2) {
     // Keep two-hand signs readable without changing the captured relative pose.
@@ -2180,6 +2330,8 @@ function playSentence() {
 
 function highlightVocabButton(key) {
   if (activeVocabBtn) activeVocabBtn.classList.remove("active");
+  activeVocabBtn = null;
+  if (!key) return;
   var btn = document.querySelector('#vocabList button[data-key="' + CSS.escape(key) + '"]');
   if (btn) { btn.classList.add("active"); activeVocabBtn = btn; }
 }
@@ -2194,6 +2346,7 @@ function playWord(word) {
     playDir = 1;
     lastWord = key;
     previousPose={left:null,right:null};
+    clearNumberPoseButtons();
     setPlaying(true);
     renderFrame(key);
     highlightVocabButton(key);
@@ -2213,6 +2366,77 @@ function playRandomWord() {
   var k = keys[Math.floor(Math.random() * keys.length)];
   document.getElementById("wordInput").value = k;
   playWord(k);
+}
+
+function clearNumberPoseButtons() {
+  document.querySelectorAll("[data-number-pose]").forEach(function (button) {
+    button.classList.remove("active");
+  });
+}
+
+function makeFingerLandmarks(base, raised, side, lengths, zOffset) {
+  var pts = [];
+  if (raised) {
+    pts.push([base[0] + side * 0.015, base[1] + lengths[0], zOffset]);
+    pts.push([base[0] + side * 0.025, base[1] + lengths[0] + lengths[1], zOffset - 0.012]);
+    pts.push([base[0] + side * 0.03, base[1] + lengths[0] + lengths[1] + lengths[2], zOffset - 0.018]);
+  } else {
+    pts.push([base[0] + side * 0.08, base[1] + 0.20, zOffset - 0.02]);
+    pts.push([base[0] + side * 0.02, base[1] + 0.08, zOffset - 0.08]);
+    pts.push([base[0] - side * 0.07, base[1] + 0.16, zOffset - 0.11]);
+  }
+  return pts;
+}
+
+function makeNumberPoseFrame(number) {
+  var raised = {
+    thumb: number === 5,
+    index: number >= 1,
+    middle: number >= 2,
+    ring: number >= 3,
+    pinky: number >= 4
+  };
+  var points = new Array(21);
+  points[0] = [0, -0.34, 0.02];
+  points[1] = [-0.31, 0.05, 0.01];
+  points[5] = [-0.18, 0.08, 0];
+  points[9] = [0, 0.12, 0];
+  points[13] = [0.18, 0.08, 0];
+  points[17] = [0.34, 0.02, 0.01];
+
+  if (raised.thumb) {
+    points[2] = [-0.52, 0.22, 0.02];
+    points[3] = [-0.70, 0.38, 0.01];
+    points[4] = [-0.84, 0.53, 0];
+  } else {
+    points[2] = [-0.46, 0.18, -0.03];
+    points[3] = [-0.30, 0.27, -0.10];
+    points[4] = [-0.09, 0.23, -0.14];
+  }
+
+  makeFingerLandmarks(points[5], raised.index, -1, [0.34, 0.30, 0.25], 0).forEach(function (p, i) { points[6 + i] = p; });
+  makeFingerLandmarks(points[9], raised.middle, 0, [0.39, 0.34, 0.28], -0.01).forEach(function (p, i) { points[10 + i] = p; });
+  makeFingerLandmarks(points[13], raised.ring, 1, [0.35, 0.30, 0.25], 0).forEach(function (p, i) { points[14 + i] = p; });
+  makeFingerLandmarks(points[17], raised.pinky, 1, [0.29, 0.25, 0.21], 0.01).forEach(function (p, i) { points[18 + i] = p; });
+
+  return { left: null, right: points };
+}
+
+function playNumberPose(number) {
+  currentFrames = [makeNumberPoseFrame(number)];
+  frameIdx = 0;
+  playDir = 1;
+  isPlaying = false;
+  isSentencePlayback = false;
+  lastWord = "number " + number;
+  previousPose = { left: null, right: null };
+  clearNumberPoseButtons();
+  var btn = document.querySelector('[data-number-pose="' + number + '"]');
+  if (btn) btn.classList.add("active");
+  highlightVocabButton(null);
+  renderFrame(lastWord);
+  setPlaying(false);
+  syncPlaybackUI();
 }
 
 function saveFrameAsImage() {
@@ -2374,6 +2598,11 @@ document.getElementById("blendRange").addEventListener("input", function () {
 });
 document.getElementById("randomBtn").addEventListener("click", playRandomWord);
 document.getElementById("saveImgBtn").addEventListener("click", saveFrameAsImage);
+document.querySelectorAll("[data-number-pose]").forEach(function (button) {
+  button.addEventListener("click", function () {
+    playNumberPose(parseInt(button.getAttribute("data-number-pose"), 10));
+  });
+});
 document.getElementById("practiceBtn").addEventListener("click", startPractice);
 document.getElementById("quizBtn").addEventListener("click", startQuiz);
 document.getElementById("webcamBtn").addEventListener("click", toggleWebcam);
@@ -2427,7 +2656,7 @@ document.getElementById("lightSelect").addEventListener("change", function () {
 });
 
 
-// ---- FBX model controls ----
+// ---- landmark hand controls ----
 document.getElementById("smoothRange").addEventListener("input", function(){
   poseSmoothing=parseInt(this.value,10)/100;
   document.getElementById("smoothValue").textContent=this.value+"%";
@@ -2441,6 +2670,20 @@ document.getElementById("modelScaleRange").addEventListener("input", function(){
   });
   if(objSource) objSource.scale.setScalar(modelBaseScale*modelScaleUser);
   if(currentFrames) renderFrame(lastWord);
+});
+document.getElementById("uploadedOpacityRange").addEventListener("input", function () {
+  uploadedModelOpacity = parseInt(this.value, 10) / 100;
+  document.getElementById("uploadedOpacityValue").textContent = this.value + "%";
+  updateUploadedModelVisibility();
+});
+document.getElementById("loadUploadedModelBtn").addEventListener("click", loadUploadedBaseModel);
+document.getElementById("toggleUploadedModelBtn").addEventListener("click", function () {
+  uploadedModelVisible = !uploadedModelVisible;
+  updateUploadedModelVisibility();
+});
+document.getElementById("compareModelToggle").addEventListener("change", function () {
+  uploadedModelCompare = this.checked;
+  updateUploadedModelVisibility();
 });
 document.getElementById("resetViewBtn").addEventListener("click", resetCamera);
 document.getElementById("frontViewBtn").addEventListener("click", function(){setCameraPreset('front');});
@@ -2525,6 +2768,7 @@ document.addEventListener("keydown", function (e) {
     frameIdx = (frameIdx - 1 + currentFrames.length) % currentFrames.length;
     renderFrame(lastWord);
   } else if (e.key === "r" || e.key === "R") { playRandomWord(); }
+  else if (/^[0-5]$/.test(e.key)) { playNumberPose(parseInt(e.key, 10)); }
 });
 
 refreshVocabList();
@@ -3175,12 +3419,17 @@ document.addEventListener("keydown", function (e) {
 syncTtsBadge();
 renderSessionSigns();
 setSessionState("idle", "Idle");
-window.addEventListener("load", function () {
-  window.setTimeout(function () {
-    var preloader = document.getElementById("preloader");
-    if (preloader) preloader.classList.add("hidden");
-  }, 350);
+function hidePreloader() {
+  var preloader = document.getElementById("preloader");
+  if (preloader) preloader.classList.add("hidden");
+}
+document.addEventListener("DOMContentLoaded", function () {
+  window.setTimeout(hidePreloader, 350);
 });
+window.addEventListener("load", function () {
+  window.setTimeout(hidePreloader, 350);
+});
+window.setTimeout(hidePreloader, 1800);
 </script>
 
 </body>

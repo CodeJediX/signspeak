@@ -13,6 +13,10 @@ python -m http.server 8000 --directory docs
 
 Open <http://localhost:8000/sign_viewer.html>.
 
+When hosted with GitHub Pages, the shareable viewer URL is:
+
+<https://codejedix.github.io/signspeak/sign_viewer.html>
+
 The viewer must be served over HTTP so the browser can load the local
 MediaPipe model and vocabulary files. Click **Load model**, then **Start
 camera**. The built-in landmark matcher works without a converted TensorFlow.js
