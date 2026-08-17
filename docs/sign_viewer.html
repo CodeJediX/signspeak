@@ -622,16 +622,6 @@
         <button id="glbBtn">Export GLB</button>
         <button id="diagnosticBtn">Diagnostics</button>
       </div>
-      <div class="rangeRow">
-        <label for="uploadedOpacityRange">Uploaded model opacity</label>
-        <span class="rangeValue" id="uploadedOpacityValue">28%</span>
-      </div>
-      <input id="uploadedOpacityRange" type="range" min="8" max="100" value="28" step="1" />
-      <div class="modelBtns">
-        <button id="loadUploadedModelBtn">Reload uploaded model</button>
-        <button id="toggleUploadedModelBtn">Hide uploaded model</button>
-      </div>
-      <label class="toggle" style="margin-top:8px;"><input id="compareModelToggle" type="checkbox" checked /> Compare beside animated hand</label>
       <div id="modelDiag" class="diag" hidden></div>
       <div id="performanceBadge">Articulated landmark hand · independent joint driver</div>
     </div>
@@ -712,7 +702,7 @@ var vocab = {"and": [{"left": [[0.0, -0.0, 0.0], [0.1899302750825882, -0.4969644
 
 // ---- hand geometry constants (MediaPipe 21-point layout) ----
 var palmLoop = [0, 1, 5, 9, 13, 17]; // wrist, thumb CMC, index/middle/ring/pinky MCP
-var radiusByLandmark = [0.068,0.038,0.032,0.027,0.022,0.038,0.033,0.027,0.021,0.040,0.035,0.029,0.022,0.038,0.033,0.027,0.021,0.035,0.030,0.025,0.019];
+var radiusByLandmark = [0.078,0.046,0.039,0.032,0.025,0.047,0.040,0.032,0.024,0.050,0.043,0.034,0.025,0.047,0.040,0.032,0.024,0.041,0.034,0.027,0.021];
 var fingerChains = [
   [1, 2, 3, 4],     // thumb
   [5, 6, 7, 8],     // index
@@ -730,15 +720,15 @@ var fingertips = [
 var skeletonConnections = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]];
 
 // ---- tunable shape parameters ----
-var SEGMENTS_PER_SPAN = 10;    // tube subdivisions between two consecutive joints
-var FINGER_RADIAL_SEGMENTS = 14;
-var KNUCKLE_BUMP = 0.16;      // subtle joint fullness without separate ball-like joints
-var FLATTEN_NORMAL = 0.78;    // finger cross-section squash along the palm-normal axis
-var FLATTEN_SIDE = 1.02;      // finger cross-section stretch along the side axis
-var PALM_RIM_SEGMENTS = 32;
-var PALM_RIM_HALF = 0.016;
-var PALM_FRONT_HEIGHT = 0.19;
-var PALM_BACK_HEIGHT = 0.13;
+var SEGMENTS_PER_SPAN = 14;    // tube subdivisions between two consecutive joints
+var FINGER_RADIAL_SEGMENTS = 18;
+var KNUCKLE_BUMP = 0.23;      // natural joint fullness without ball-like joints
+var FLATTEN_NORMAL = 0.72;    // finger cross-section squash along the palm-normal axis
+var FLATTEN_SIDE = 1.08;      // finger cross-section stretch along the side axis
+var PALM_RIM_SEGMENTS = 42;
+var PALM_RIM_HALF = 0.022;
+var PALM_FRONT_HEIGHT = 0.24;
+var PALM_BACK_HEIGHT = 0.16;
 
 var scene, camera, renderer, controls, group, debugGroup;
 var skinMat, nailMat;
@@ -770,11 +760,6 @@ var MODEL_URL = "handbynadevaynoskix.fbx";
 var FALLBACK_MODEL_URL = "handct_hand.obj";
 var objLoader = null;
 var objSource = null;
-var uploadedModel = null;
-var uploadedModelUrl = "models/base.obj";
-var uploadedModelVisible = true;
-var uploadedModelCompare = true;
-var uploadedModelOpacity = 0.28;
 var fbxLoader = null;
 var fbxSource = null;
 var fbxReady = false;
@@ -1116,83 +1101,6 @@ function normalizeModel(root){
   var center=box.getCenter(new THREE.Vector3());
   root.position.sub(center.multiplyScalar(1));
   root.position.y += 0.1;
-}
-
-function normalizeUploadedModel(root) {
-  var box = new THREE.Box3().setFromObject(root);
-  var size = box.getSize(new THREE.Vector3());
-  var maxDim = Math.max(size.x, size.y, size.z) || 1;
-  root.scale.setScalar(1.45 / maxDim);
-  box.setFromObject(root);
-  var center = box.getCenter(new THREE.Vector3());
-  root.position.sub(center);
-  root.position.y += 0.06;
-  root.position.z -= 0.08;
-}
-
-function setUploadedModelMaterial(root) {
-  var mat = new THREE.MeshPhysicalMaterial({
-    color: 0xe0ac85,
-    roughness: 0.5,
-    metalness: 0.0,
-    clearcoat: 0.12,
-    clearcoatRoughness: 0.45,
-    transparent: uploadedModelOpacity < 1,
-    opacity: uploadedModelOpacity,
-    depthWrite: uploadedModelOpacity >= 0.96
-  });
-  root.traverse(function (node) {
-    if (!node.isMesh) return;
-    node.castShadow = true;
-    node.receiveShadow = true;
-    node.material = mat.clone();
-  });
-}
-
-function updateUploadedModelVisibility() {
-  if (!modelGroup) return;
-  modelGroup.visible = !!uploadedModel && uploadedModelVisible;
-  if (!uploadedModel) return;
-  uploadedModel.position.x = uploadedModelCompare ? 1.05 : 0;
-  uploadedModel.traverse(function (node) {
-    if (!node.isMesh || !node.material) return;
-    node.material.opacity = uploadedModelOpacity;
-    node.material.transparent = uploadedModelOpacity < 1;
-    node.material.depthWrite = uploadedModelOpacity >= 0.96;
-    node.material.needsUpdate = true;
-  });
-  var toggleBtn = document.getElementById("toggleUploadedModelBtn");
-  if (toggleBtn) toggleBtn.textContent = uploadedModelVisible ? "Hide uploaded model" : "Show uploaded model";
-}
-
-function loadUploadedBaseModel() {
-  if (!modelGroup) return;
-  if (!THREE.OBJLoader) {
-    setModelState("OBJ loader unavailable", "warn");
-    modelDiagnostics = "The animated landmark hand is ready, but the uploaded OBJ preview could not load because OBJLoader is unavailable.";
-    return;
-  }
-  if (uploadedModel) {
-    modelGroup.remove(uploadedModel);
-    safeDisposeObject(uploadedModel);
-    uploadedModel = null;
-  }
-  objLoader = objLoader || new THREE.OBJLoader();
-  setModelState("loading uploaded OBJ...", "");
-  objLoader.load(uploadedModelUrl, function (obj) {
-    uploadedModel = obj;
-    setUploadedModelMaterial(uploadedModel);
-    normalizeUploadedModel(uploadedModel);
-    modelGroup.add(uploadedModel);
-    uploadedModelVisible = true;
-    updateUploadedModelVisibility();
-    setModelState("landmark hand + uploaded OBJ ready", "ready");
-    modelDiagnostics = "Uploaded model loaded from " + uploadedModelUrl + "\nThis OBJ is used as a static/reference hand model. Because OBJ has no skeleton or finger bones, SignSpeak keeps the landmark hand as the accurate animation layer for signs.";
-  }, null, function (err) {
-    console.error("Uploaded model load failed", err);
-    setModelState("uploaded OBJ failed", "warn");
-    modelDiagnostics = "Could not load " + uploadedModelUrl + ". The animated landmark hand still works.";
-  });
 }
 
 function prepareOBJDeformation(root) {
@@ -1842,25 +1750,36 @@ function addPalmCreases(points, normal) {
   });
 }
 
+function addBackOfHandTendons(points, normal) {
+  var wrist = vec(points[0]);
+  var middle = vec(points[9]);
+  var backNormal = normal.clone().multiplyScalar(-1);
+  var mat = new THREE.LineBasicMaterial({ color: 0xb9795c, transparent: true, opacity: 0.18 });
+  [5, 9, 13, 17].forEach(function (mcpIdx, i) {
+    var mcp = vec(points[mcpIdx]);
+    var pip = vec(points[mcpIdx + 1]);
+    var start = wrist.clone().lerp(middle, 0.32).lerp(mcp, 0.22).addScaledVector(backNormal, 0.055);
+    var mid = wrist.clone().lerp(mcp, 0.72).addScaledVector(backNormal, 0.075 + i * 0.002);
+    var end = mcp.clone().lerp(pip, 0.18).addScaledVector(backNormal, 0.05);
+    var curve = new THREE.CatmullRomCurve3([start, mid, end]);
+    var geo = new THREE.BufferGeometry().setFromPoints(curve.getPoints(14));
+    group.add(new THREE.Line(geo, mat));
+  });
+}
+
 function buildFreshHand(points) {
   var normal = palmNormal(points);
-  addFreshPalm(points, normal);
+  buildPalmMound(points, normal);
+  addPalmBody(points, normal);
+  addThumbWebbing(points, normal);
+  addAnatomicalPads(points, normal);
   fingerChains.forEach(function(chain) {
-    for (var i = 0; i < chain.length - 1; i++) {
-      addFreshSegment(points[chain[i]], points[chain[i + 1]],
-        radiusByLandmark[chain[i]] * 1.08,
-        radiusByLandmark[chain[i + 1]] * 0.92, normal);
-    }
-    var tip = vec(points[chain[chain.length - 1]]);
-    var tipSphere = new THREE.Mesh(
-      new THREE.SphereGeometry(radiusByLandmark[chain[chain.length - 1]] * 0.9, 14, 9),
-      skinMat
-    );
-    tipSphere.position.copy(tip);
-    group.add(tipSphere);
+    buildFingerTube(points, chain, normal);
   });
+  addFingerJointDetails(points, normal);
   addForearmStub(points);
   addPalmCreases(points, normal);
+  addBackOfHandTendons(points, normal);
   fingertips.forEach(function (f) { addNail(points, normal, f.tip, f.prev); });
   if (showSkeleton) addSkeletonOverlay(points);
 }
@@ -1932,11 +1851,11 @@ function makeSkinTextures() {
 
   var normalTex = new THREE.CanvasTexture(normalCanvas);
   normalTex.wrapS = normalTex.wrapT = THREE.RepeatWrapping;
-  normalTex.repeat.set(6, 6);
+  normalTex.repeat.set(8, 8);
 
   var roughTex = new THREE.CanvasTexture(noiseCanvas);
   roughTex.wrapS = roughTex.wrapT = THREE.RepeatWrapping;
-  roughTex.repeat.set(6, 6);
+  roughTex.repeat.set(8, 8);
 
   return { normal: normalTex, roughness: roughTex };
 }
@@ -1996,32 +1915,32 @@ function initThree() {
     setModelState("WebGL context lost — reload this page","warn");
   }, false);
 
-  hemiLight = new THREE.HemisphereLight(0xfff4e0, 0x1a1410, 0.55);
+  hemiLight = new THREE.HemisphereLight(0xfff7eb, 0x20140f, 0.72);
   scene.add(hemiLight);
-  keyLight = new THREE.DirectionalLight(0xfff2e0, 1.0);
-  keyLight.position.set(1.2, 2.4, 2.2);
+  keyLight = new THREE.DirectionalLight(0xffead8, 1.2);
+  keyLight.position.set(1.15, 2.6, 2.1);
   keyLight.castShadow = true;
   keyLight.shadow.mapSize.set(1024, 1024);
   keyLight.shadow.camera.near = 0.1;
   keyLight.shadow.camera.far = 8;
   keyLight.shadow.bias = -0.0005;
   scene.add(keyLight);
-  fillLight = new THREE.DirectionalLight(0xcfe8ff, 0.35);
+  fillLight = new THREE.DirectionalLight(0xd6ecff, 0.42);
   fillLight.position.set(-1.5, -0.3, 1.4);
   scene.add(fillLight);
-  rimLight = new THREE.DirectionalLight(0x5fd9c7, 0.4);
+  rimLight = new THREE.DirectionalLight(0xffbd8a, 0.28);
   rimLight.position.set(-0.6, 1.2, -2);
   scene.add(rimLight);
 
   var skinMaps = makeSkinTextures();
   skinMat = new THREE.MeshPhysicalMaterial({
-    color: 0xe0ac85, roughness: 0.42, metalness: 0.0,
-    clearcoat: 0.05, clearcoatRoughness: 0.75,
-    normalMap: skinMaps.normal, normalScale: new THREE.Vector2(0.35, 0.35),
+    color: 0xe0ac85, roughness: 0.56, metalness: 0.0,
+    clearcoat: 0.03, clearcoatRoughness: 0.9,
+    normalMap: skinMaps.normal, normalScale: new THREE.Vector2(0.23, 0.23),
     roughnessMap: skinMaps.roughness,
-    emissive: 0x5a1c10, emissiveIntensity: 0.035
+    emissive: 0x6b2818, emissiveIntensity: 0.028
   });
-  nailMat = new THREE.MeshPhysicalMaterial({ color: 0xf2e4d8, roughness: 0.22, metalness: 0.0, clearcoat: 0.65, clearcoatRoughness: 0.2 });
+  nailMat = new THREE.MeshPhysicalMaterial({ color: 0xf4dfd5, roughness: 0.28, metalness: 0.0, clearcoat: 0.52, clearcoatRoughness: 0.24, transparent: true, opacity: 0.94 });
 
   group = new THREE.Group();
   scene.add(group);
@@ -2072,8 +1991,7 @@ function initThree() {
 
   window.addEventListener("resize", onResize);
   setModelState("Articulated landmark hand ready","ready");
-  modelDiagnostics="Runtime articulated hand active\nEach thumb and finger segment is generated from its own landmark joint.\nThe imported number-hand OBJ was inspected separately; it is not a rigged bendable hand, so SignSpeak uses this procedural anatomical renderer.";
-  loadUploadedBaseModel();
+  modelDiagnostics="Runtime articulated human hand active\nEach thumb and finger segment is generated from landmark joints, with softened palm mass, tapered fingers, nails, knuckles, and skin texture for a more human presentation.";
   animate();
 }
 
@@ -2167,7 +2085,7 @@ function renderFrame(word) {
   if (leftPoints) handsPresent.push("L");
   if (rightPoints) handsPresent.push("R");
   hideModels();
-  updateUploadedModelVisibility();
+  modelGroup.visible=false;
   var handCount = (leftPoints ? 1 : 0) + (rightPoints ? 1 : 0);
   if (handCount === 2) {
     // Keep two-hand signs readable without changing the captured relative pose.
@@ -2670,20 +2588,6 @@ document.getElementById("modelScaleRange").addEventListener("input", function(){
   });
   if(objSource) objSource.scale.setScalar(modelBaseScale*modelScaleUser);
   if(currentFrames) renderFrame(lastWord);
-});
-document.getElementById("uploadedOpacityRange").addEventListener("input", function () {
-  uploadedModelOpacity = parseInt(this.value, 10) / 100;
-  document.getElementById("uploadedOpacityValue").textContent = this.value + "%";
-  updateUploadedModelVisibility();
-});
-document.getElementById("loadUploadedModelBtn").addEventListener("click", loadUploadedBaseModel);
-document.getElementById("toggleUploadedModelBtn").addEventListener("click", function () {
-  uploadedModelVisible = !uploadedModelVisible;
-  updateUploadedModelVisibility();
-});
-document.getElementById("compareModelToggle").addEventListener("change", function () {
-  uploadedModelCompare = this.checked;
-  updateUploadedModelVisibility();
 });
 document.getElementById("resetViewBtn").addEventListener("click", resetCamera);
 document.getElementById("frontViewBtn").addEventListener("click", function(){setCameraPreset('front');});
