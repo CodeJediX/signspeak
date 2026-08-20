@@ -3,6 +3,8 @@ name: Build SignSpeak Junior APK
 on:
   push:
     branches: [signspeak-junior-mobile-build]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 jobs:
