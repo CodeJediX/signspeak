@@ -18,11 +18,21 @@ jobs:
         shell: bash
         run: |
           mkdir -p junior-android
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('junior-android-source/chunk-02.b64')
+          s = p.read_text()
+          if len(s) == 11999:
+              s = s[:6052] + 'E' + s[6052:]
+              p.write_text(s)
+          assert len(p.read_text()) == 12000
+          PY
           : > junior-android-source.zip
           for f in junior-android-source/chunk-*.b64; do
-            echo "Decoding $f ($(wc -c < \"$f\") bytes)"
+            echo "Decoding $f"
             base64 --decode "$f" >> junior-android-source.zip
           done
+          echo "939c8cead807fff5b88d846f77efaedc81d31409a60c5abb407457bacaa9fb5c  junior-android-source.zip" | sha256sum -c -
           unzip -t junior-android-source.zip
           unzip -q junior-android-source.zip -d junior-android
           test -f junior-android/app/build.gradle
