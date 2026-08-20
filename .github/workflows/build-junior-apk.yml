@@ -18,7 +18,12 @@ jobs:
         shell: bash
         run: |
           mkdir -p junior-android
-          cat junior-android-source/chunk-*.b64 | base64 --decode > junior-android-source.zip
+          : > junior-android-source.zip
+          for f in junior-android-source/chunk-*.b64; do
+            echo "Decoding $f ($(wc -c < \"$f\") bytes)"
+            base64 --decode "$f" >> junior-android-source.zip
+          done
+          unzip -t junior-android-source.zip
           unzip -q junior-android-source.zip -d junior-android
           test -f junior-android/app/build.gradle
           test -f junior-android/app/src/main/assets/www/index.html
