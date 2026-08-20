@@ -26,6 +26,13 @@ jobs:
               s = s[:6052] + 'E' + s[6052:]
               p.write_text(s)
           assert len(p.read_text()) == 12000
+
+          p = Path('junior-android-source/chunk-03.b64')
+          s = p.read_text()
+          if len(s) == 12000 and s[1910] == 'a':
+              s = s[:1910] + 'e' + s[1911:]
+              p.write_text(s)
+          assert len(p.read_text()) == 12000
           PY
           : > junior-android-source.zip
           for f in junior-android-source/chunk-*.b64; do
